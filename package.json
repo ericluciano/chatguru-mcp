@@ -1,0 +1,16 @@
+{
+  "name": "chatguru-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for ChatGuru WhatsApp - Expert Integrado",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "login": "node login.js",
+    "setup": "node setup.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "playwright": "^1.40.0"
+  }
+}

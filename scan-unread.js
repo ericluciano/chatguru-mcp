@@ -22,75 +22,43 @@ const browser = await chromium.launch({ headless: false }); // VISÍVEL
 const context = await browser.newContext({ storageState, permissions: ["notifications"] });
 const page = await context.newPage();
 
-// Navegar para o painel usando domcontentloaded (WebSocket impede "load" de completar)
-console.log("Navegando para o painel...");
-await page.goto(`https://s${SERVER}.expertintegrado.app`, { waitUntil: "domcontentloaded", timeout: 60000 });
-console.log(`Página carregou: ${page.url()}`);
-await sleep(5000);
-
-// Expandir menu lateral (pode estar recolhido)
-console.log("Expandindo menu lateral...");
-const menuToggle = await page.$(".sidebar-toggler, .nav-toggle, .menu-toggle, button[aria-label='Toggle navigation'], .navbar-toggler");
-if (menuToggle) {
-  await menuToggle.click();
-  console.log("  Menu toggle clicado.");
-  await sleep(1500);
-} else {
-  console.log("  Menu toggle não encontrado, tentando pelo DOM...");
-  // Tentar via evaluate
-  await page.evaluate(() => {
-    // Procurar qualquer botão de toggle do menu
-    const toggles = document.querySelectorAll("button, a, div");
-    for (const t of toggles) {
-      if (t.classList.contains("sidebar-toggler") || t.classList.contains("navbar-toggler") ||
-          t.getAttribute("data-toggle") === "sidebar" || t.getAttribute("aria-label")?.includes("Toggle")) {
-        t.click();
-        return;
-      }
-    }
-    // Fallback: expandir sidebar via classe
-    const sidebar = document.querySelector(".sidebar, .app-sidebar, nav.sidebar");
-    if (sidebar) sidebar.classList.add("show", "open", "expanded");
-  });
-  await sleep(1500);
-}
-
-// Clicar em "Chats" no menu
-console.log("Clicando em Chats no menu...");
-const chatClicked = await page.evaluate(() => {
-  const links = document.querySelectorAll("a, .nav-link, .nav-item a");
-  for (const link of links) {
-    const text = link.textContent?.trim();
-    const href = link.getAttribute("href") || "";
-    if (text === "Chats" || href.includes("/chats")) {
-      link.click();
-      return `Clicou em: "${text}" href="${href}"`;
-    }
-  }
-  // Fallback: navegar direto
-  window.location.href = "/chats";
-  return "Fallback: window.location.href = /chats";
-});
-console.log(`  ${chatClicked}`);
-
-// Aguardar navegação para /chats completar
-console.log("Aguardando navegação para /chats...");
+// Navegar direto para /chats com tratamento robusto de timeout
+console.log("Navegando para /chats...");
 try {
-  await page.waitForURL("**/chats**", { timeout: 30000 });
-  console.log(`  URL mudou para: ${page.url()}`);
-} catch {
-  console.log(`  Timeout esperando URL mudar. URL atual: ${page.url()}`);
-  // Forçar navegação
-  await page.evaluate(() => { window.location.href = "/chats"; });
-  await page.waitForURL("**/chats**", { timeout: 30000 }).catch(() => {});
-  console.log(`  Após forçar: ${page.url()}`);
+  await page.goto(`https://s${SERVER}.expertintegrado.app/chats`, { waitUntil: "commit", timeout: 30000 });
+  console.log(`  Resposta recebida: ${page.url()}`);
+} catch (e) {
+  console.log(`  Timeout no goto, verificando estado...`);
+  console.log(`  URL atual: ${page.url()}`);
 }
-// Aguardar DOM estabilizar (SPA renderizar os cards)
-console.log("Aguardando cards de chat renderizarem...");
-await page.waitForSelector(".list__user-card", { timeout: 20000 }).catch(() => {
-  console.log("  Aviso: nenhum card encontrado em 20s, continuando...");
-});
-await sleep(3000);
+
+// Esperar a página renderizar (SPA pode demorar após "commit")
+console.log("Aguardando SPA renderizar...");
+await sleep(8000);
+console.log(`  URL após espera: ${page.url()}`);
+
+// Se caiu na página de login, sessão expirou
+const isLogin = page.url().includes("login") || page.url().includes("signin");
+if (isLogin) {
+  console.error("ERRO: Sessão expirada. Execute: CHATGURU_SERVER=17 node login.js");
+  await browser.close();
+  process.exit(1);
+}
+
+// Aguardar cards de chat renderizarem
+console.log("Aguardando cards de chat...");
+try {
+  await page.waitForSelector(".list__user-card", { timeout: 30000 });
+  console.log("  Cards encontrados!");
+} catch {
+  console.log("  Cards não encontrados em 30s. Tentando navegar via JS...");
+  await page.evaluate(() => { window.location.href = "/chats"; });
+  await sleep(8000);
+  await page.waitForSelector(".list__user-card", { timeout: 30000 }).catch(() => {
+    console.log("  AVISO: Nenhum card encontrado. O site pode estar lento.");
+  });
+}
+await sleep(2000);
 console.log(`URL final: ${page.url()}`);
 
 // Remover modais

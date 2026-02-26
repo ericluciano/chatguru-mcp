@@ -2,10 +2,12 @@
 
 MCP (Model Context Protocol) server para integração com o ChatGuru WhatsApp. Permite que assistentes AI (Claude Code, Claude Desktop, etc.) enviem mensagens, leiam conversas e gerenciem contatos no ChatGuru.
 
+> **Credenciais são pessoais.** Cada pessoa usa sua própria API Key do ChatGuru. Nenhuma credencial está incluída neste repositório.
+
 ## Funcionalidades
 
 - **Mensagens**: enviar texto, arquivos via URL, verificar status de entrega
-- **Contatos**: registrar novos chats, verificar status de registro, atualizar campos customizados, nome e contexto
+- **Contatos**: registrar novos chats, atualizar campos customizados, nome e contexto
 - **Notas**: adicionar notas internas em conversas
 - **Fluxos**: executar diálogos/fluxos automatizados
 - **Leitura**: ler histórico de mensagens, listar chats com filtros avançados
@@ -15,9 +17,11 @@ MCP (Model Context Protocol) server para integração com o ChatGuru WhatsApp. P
 
 - Node.js 18+
 - Conta no ChatGuru com acesso à API
-- Credenciais: API Key, Account ID, Phone ID, Server
+- Credenciais: API Key, Account ID, Phone ID e número do Server (peça ao admin da conta)
 
-## Instalação
+## Como usar
+
+### 1. Clonar e instalar
 
 ```bash
 git clone https://github.com/ericluciano/chatguru-mcp.git
@@ -25,26 +29,18 @@ cd chatguru-mcp
 npm install
 ```
 
-## Configuração
-
-### 1. Variáveis de ambiente
+### 2. Configurar suas credenciais
 
 ```bash
 cp .env.example .env
-# Edite .env com suas credenciais do ChatGuru
+# Abra o .env e preencha com suas credenciais do ChatGuru
 ```
 
-### 2. Login (Playwright)
+As credenciais estão disponíveis em: **ChatGuru > Configurações > Celulares**
 
-Para funcionalidades que usam scraping da UI:
+### 3. Registrar no Claude Desktop
 
-```bash
-npm run login
-```
-
-### 3. Adicionar ao Claude Desktop
-
-`C:\Users\SeuUsuario\AppData\Roaming\Claude\claude_desktop_config.json`:
+Edite `C:\Users\SeuUsuario\AppData\Roaming\Claude\claude_desktop_config.json` e adicione:
 
 ```json
 {
@@ -61,6 +57,20 @@ npm run login
     }
   }
 }
+```
+
+> Substitua os valores pelos da **sua conta**. Esse arquivo fica apenas na sua máquina.
+
+### 4. Reiniciar o Claude Desktop
+
+Feche e reabra o Claude Desktop para carregar o MCP.
+
+### Login Playwright (opcional)
+
+Para funcionalidades que usam scraping da UI do ChatGuru:
+
+```bash
+npm run login
 ```
 
 ## Scripts
@@ -92,8 +102,8 @@ npm run login
 ## Segurança
 
 - Credenciais via variáveis de ambiente — nunca commitadas no repositório
-- `session.json` (cache do Playwright) está no `.gitignore`
 - `.env` está no `.gitignore`
+- `session.json` (cache do Playwright) está no `.gitignore`
 
 ## Licença
 

@@ -52,23 +52,68 @@ async function sleep(ms) {
 /**
  * Normaliza número de telefone para formato DDI+DDD+NÚMERO (somente dígitos).
  * Aceita: +55 (81) 91095702, 55 81 9109-5702, 81991095702, 5581991095702
+ *
+ * Regra do 9º dígito (celulares brasileiros):
+ * - DDDs 11-30 (SP, RJ, ES, MG parcial): celulares têm 9 dígitos (ex: 11 9XXXX-XXXX)
+ * - DDDs 31+ (restante do Brasil): celulares têm 8 dígitos (ex: 31 XXXX-XXXX)
+ * O ChatGuru armazena o número SEM o 9 extra para DDDs >= 31.
+ * Exemplo: 5531912345678 → 553112345678 (remove o 9 após DDD)
  */
 function normalizePhone(input) {
   // Remove tudo que não é dígito
   let digits = input.replace(/\D/g, "");
 
-  // Se começa com 55 e tem 12-13 dígitos, já está normalizado
-  if (digits.startsWith("55") && digits.length >= 12) {
-    return digits;
+  // Se não começa com 55, adiciona DDI
+  if (!digits.startsWith("55") && digits.length >= 10 && digits.length <= 11) {
+    digits = "55" + digits;
   }
 
-  // Se tem 10-11 dígitos (DDD + número), adiciona DDI 55
-  if (digits.length >= 10 && digits.length <= 11) {
-    return "55" + digits;
+  // Aplica regra do 9º dígito para DDDs >= 31
+  // Formato esperado: 55 + DD + NÚMERO
+  if (digits.startsWith("55") && digits.length === 13) {
+    const ddd = parseInt(digits.substring(2, 4), 10);
+    const ninthDigit = digits[4];
+    // DDDs 31+ com 9 dígitos no celular: remover o 9 extra
+    if (ddd >= 31 && ninthDigit === "9") {
+      digits = digits.substring(0, 4) + digits.substring(5); // remove o 5º char (o "9")
+    }
   }
 
-  // Retorna como está (pode ser número internacional não-BR)
   return digits;
+}
+
+/**
+ * Gera variantes de busca para um número brasileiro.
+ * Retorna array com o número normalizado + variante com/sem 9º dígito.
+ * Útil para busca no Playwright onde o formato exato pode variar.
+ */
+function phoneSearchVariants(input) {
+  const normalized = normalizePhone(input);
+  const variants = [normalized];
+
+  if (normalized.startsWith("55") && normalized.length >= 12) {
+    const ddd = parseInt(normalized.substring(2, 4), 10);
+    const rest = normalized.substring(4);
+
+    if (ddd >= 31) {
+      // Se tem 8 dígitos após DDD, tentar com 9 na frente
+      if (rest.length === 8) {
+        variants.push(normalized.substring(0, 4) + "9" + rest);
+      }
+      // Se tem 9 dígitos após DDD e começa com 9, tentar sem
+      if (rest.length === 9 && rest[0] === "9") {
+        variants.push(normalized.substring(0, 4) + rest.substring(1));
+      }
+    } else {
+      // DDDs 11-30: celular sempre tem 9 dígitos
+      // Se tem 8 dígitos, adicionar 9
+      if (rest.length === 8) {
+        variants.push(normalized.substring(0, 4) + "9" + rest);
+      }
+    }
+  }
+
+  return [...new Set(variants)];
 }
 
 /**
@@ -366,7 +411,7 @@ server.tool(
     chat_number: z.string().describe("Número do telefone para buscar (ex: 5511996647492). Aceita formatos variados."),
   },
   async ({ chat_number }) => {
-    const number = normalizePhone(chat_number);
+    const variants = phoneSearchVariants(chat_number);
     const session = await openBrowserWithSession();
     if (session.error) return { content: [{ type: "text", text: session.error }] };
 
@@ -383,18 +428,26 @@ server.tool(
         return { content: [{ type: "text", text: `Sessão expirada. Execute \`CHATGURU_SERVER=${SERVER} node login.js\` para renovar.` }] };
       }
 
-      // Filtrar por número de WhatsApp no campo específico
+      // Tentar cada variante de número até encontrar
+      let chatItem = null;
+      let usedVariant = variants[0];
       const phoneInput = await page.waitForSelector("#inChatsWhatsappNum", { timeout: 10000 });
-      await phoneInput.fill(number);
-      await page.keyboard.press("Enter");
-      await sleep(3000); // Aguardar filtro aplicar
 
-      // Clicar no primeiro resultado (card de chat)
-      const chatItem = await page.$(".list__user-card");
+      for (const variant of variants) {
+        await phoneInput.fill("");
+        await phoneInput.fill(variant);
+        await page.keyboard.press("Enter");
+        await sleep(3000);
+        chatItem = await page.$(".list__user-card");
+        if (chatItem) {
+          usedVariant = variant;
+          break;
+        }
+      }
 
       if (!chatItem) {
         await browser.close();
-        return { content: [{ type: "text", text: `Nenhum chat encontrado para o número ${number}. O contato pode não existir no ChatGuru.` }] };
+        return { content: [{ type: "text", text: `Nenhum chat encontrado para ${variants.join(" / ")}. O contato pode não existir no ChatGuru.` }] };
       }
 
       await chatItem.click();
